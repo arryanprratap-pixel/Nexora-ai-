@@ -1,0 +1,6 @@
+{
+  "name": "NEXORA AI",
+  "description": "Next-generation intelligent AI assistant, multimodal studio, and multi-minute animated video creator powered by Gemini.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,110 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --font-display: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    --font-sans: 'DM Sans', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  }
+
+  body {
+    font-family: var(--font-sans);
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: var(--font-display);
+  }
+
+  code, pre, .font-mono {
+    font-family: var(--font-mono);
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom subtle scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.45);
+}
+
+/* Syntax highlighting tokens for highlight.js */
+.hljs {
+  background: transparent;
+  color: #e2e8f0;
+}
+.hljs-comment,
+.hljs-quote {
+  color: #64748b;
+  font-style: italic;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-subst {
+  color: #c084fc;
+}
+.hljs-number,
+.hljs-literal,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-tag .hljs-attr {
+  color: #38bdf8;
+}
+.hljs-string,
+.hljs-doctag {
+  color: #34d399;
+}
+.hljs-title,
+.hljs-section,
+.hljs-selector-id {
+  color: #818cf8;
+  font-weight: 500;
+}
+.hljs-type,
+.hljs-class .hljs-title {
+  color: #fbbf24;
+}
+.hljs-tag,
+.hljs-name,
+.hljs-attribute {
+  color: #60a5fa;
+}
+.hljs-built_in,
+.hljs-builtin-name {
+  color: #22d3ee;
+}
+
+@keyframes nexora-orbit {
+  0% {
+    transform: rotate(0deg) scale(1);
+  }
+  50% {
+    transform: rotate(180deg) scale(1.06);
+  }
+  100% {
+    transform: rotate(360deg) scale(1);
+  }
+}
+
+.animate-nexora-orbit {
+  animation: nexora-orbit 2.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-nexora-orbit {
+    animation: none;
+  }
+}
