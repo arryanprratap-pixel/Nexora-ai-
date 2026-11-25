@@ -191,6 +191,10 @@ test('formatApiErrorMessage maps status codes and unwraps nested JSON cleanly', 
     formatApiErrorMessage(404, 'models/custom-model is not found'),
     'Model or endpoint unavailable: models/custom-model is not found'
   );
+  assert.match(
+    formatApiErrorMessage(404, 'The page could not be found NOT_FOUND bom1::r4fcw-1795609141650-691460d7c389'),
+    /Backend API route \(\/api\/\*\) was not found on this host/
+  );
 });
 
 test('inferBiomeFromText chooses situational 3D biomes and avoids space unless requested', () => {

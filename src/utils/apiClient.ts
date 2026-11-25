@@ -92,13 +92,18 @@ export async function streamChatCompletion(
       const trimmed = line.trim();
       if (!trimmed.startsWith('data:')) continue;
       const payloadStr = trimmed.slice(5).trim();
-      if (!payloadStr) continue;
-      const parsed = JSON.parse(payloadStr) as {
+      if (!payloadStr || payloadStr === '[DONE]') continue;
+      let parsed: {
         text?: string;
         error?: string;
         status?: number;
         done?: boolean;
       };
+      try {
+        parsed = JSON.parse(payloadStr) as typeof parsed;
+      } catch {
+        continue;
+      }
       if (parsed.error) {
         throw new Error(formatApiErrorMessage(parsed.status ?? 500, parsed.error));
       }

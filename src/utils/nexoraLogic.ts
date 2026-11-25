@@ -581,6 +581,9 @@ export function formatApiErrorMessage(status: number, rawMessage?: string): stri
     return 'NEXORA AI is experiencing temporary high demand (503). Please try again in a few seconds.';
   }
   if (status === 404 || msg.includes('NOT_FOUND')) {
+    if (/The page could not be found|::[a-z0-9]+-\d+-/i.test(msg)) {
+      return 'Backend API route (/api/*) was not found on this host (404). Redeploy with the Vercel /api serverless handler or full-stack Node server and verify GEMINI_API_KEY is configured.';
+    }
     if (msg && !/^NOT_FOUND$/i.test(msg)) {
       return `Model or endpoint unavailable: ${msg}`;
     }
