@@ -2,6 +2,7 @@ import React from 'react';
 import {
   BookOpen,
   Code2,
+  ExternalLink,
   Film,
   Image as ImageIcon,
   Languages,
@@ -203,8 +204,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      {/* User Profile + Settings */}
-      <div className="border-t border-slate-200 p-3 dark:border-slate-800/80">
+      {/* Sponsored Direct Link + User Profile + Settings */}
+      <div className="border-t border-slate-200 p-3 dark:border-slate-800/80 space-y-2">
+        <a
+          href="https://uplcm.com/4/12350216"
+          target="_blank"
+          rel="noopener noreferrer sponsored"
+          className="flex items-center justify-between gap-2 rounded-xl border border-indigo-500/20 bg-indigo-500/10 px-3 py-2 text-xs font-medium text-indigo-700 transition-colors hover:bg-indigo-500/15 dark:border-cyan-500/20 dark:bg-cyan-500/10 dark:text-cyan-300 dark:hover:bg-cyan-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
+        >
+          <span className="truncate">Support Free Studio · Sponsored</span>
+          <ExternalLink className="h-3.5 w-3.5 shrink-0 opacity-80" />
+        </a>
         <div className="flex items-center justify-between gap-2 rounded-xl bg-slate-100/80 p-2 dark:bg-slate-900/80">
           <button
             type="button"

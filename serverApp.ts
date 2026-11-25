@@ -345,111 +345,177 @@ app.post('/api/chat', async (req, res) => {
       systemInstruction ||
       'You are NEXORA AI, an intelligent, helpful, friendly AI assistant capable of understanding English, Hindi, and Hinglish.';
 
-    if (provider === 'openai') {
-      const key = (process.env.OPENAI_API_KEY || '').trim();
-      if (!key) {
-        res.write(
-          `data: ${JSON.stringify({
-            status: 403,
-            error:
-              'OPENAI_API_KEY is not configured in Settings > Secrets. Switch to Google Gemini (Ready) or add OPENAI_API_KEY to use ChatGPT models.',
-          })}\n\n`
-        );
-        res.end();
-        return;
+    const hasGeminiConfigured = Boolean(
+      (process.env.GEMINI_API_KEY || '').trim() &&
+        process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY'
+    );
+    const isCreditOrBillingFailure = (status: number, msg: string) =>
+      status === 402 ||
+      status === 429 ||
+      /no credits|insufficient|credit balance|billing|exceeded your current quota|payment required/i.test(
+        msg
+      );
+
+    if (provider !== 'gemini') {
+      let providerSent = false;
+      try {
+        if (provider === 'openai') {
+          const key = (process.env.OPENAI_API_KEY || '').trim();
+          if (!key) {
+            res.write(
+              `data: ${JSON.stringify({
+                status: 403,
+                error:
+                  'OPENAI_API_KEY is not configured in Settings > Secrets. Switch to Google Gemini (Ready) or add OPENAI_API_KEY to use ChatGPT models.',
+              })}\n\n`
+            );
+            res.end();
+            return;
+          }
+          const deprecatedOpenAiMap: Record<string, string> = {
+            'o3-mini': 'gpt-5-mini',
+            'o4-mini': 'gpt-5-mini',
+          };
+          const primaryOpenAiModel = deprecatedOpenAiMap[modelId || ''] || modelId || 'gpt-4o';
+          const openAiCandidates =
+            primaryOpenAiModel === 'gpt-4o-mini'
+              ? ['gpt-4o-mini']
+              : [primaryOpenAiModel, 'gpt-4o-mini'];
+
+          let lastOpenAiErr: unknown = null;
+          for (const oaModel of openAiCandidates) {
+            try {
+              await streamOpenAICompatibleChat({
+                url: 'https://api.openai.com/v1/chat/completions',
+                apiKey: key,
+                model: oaModel,
+                systemInstruction: safeSystem,
+                messages,
+                onToken: (text) => {
+                  providerSent = true;
+                  res.write(`data: ${JSON.stringify({ text })}\n\n`);
+                },
+              });
+              lastOpenAiErr = null;
+              break;
+            } catch (oaErr) {
+              lastOpenAiErr = oaErr;
+              const { status, message } = extractErrorInfo(oaErr);
+              const isModelError =
+                status === 404 ||
+                (status === 400 && /deprecated|not found|does not exist/i.test(message));
+              if (providerSent || status === 401 || status === 403 || !isModelError) {
+                throw oaErr;
+              }
+            }
+          }
+          if (lastOpenAiErr) throw lastOpenAiErr;
+
+          res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+          res.end();
+          return;
+        }
+
+        if (provider === 'anthropic') {
+          const key = (process.env.ANTHROPIC_API_KEY || '').trim();
+          if (!key) {
+            res.write(
+              `data: ${JSON.stringify({
+                status: 403,
+                error:
+                  'ANTHROPIC_API_KEY is not configured in Settings > Secrets. Switch to Google Gemini (Ready) or add ANTHROPIC_API_KEY to use Claude models.',
+              })}\n\n`
+            );
+            res.end();
+            return;
+          }
+          await streamAnthropicChat({
+            apiKey: key,
+            model: modelId || 'claude-sonnet-4-20250514',
+            systemInstruction: safeSystem,
+            messages,
+            onToken: (text) => {
+              providerSent = true;
+              res.write(`data: ${JSON.stringify({ text })}\n\n`);
+            },
+          });
+          res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+          res.end();
+          return;
+        }
+
+        if (provider === 'deepseek') {
+          const key = (process.env.DEEPSEEK_API_KEY || '').trim();
+          if (!key) {
+            res.write(
+              `data: ${JSON.stringify({
+                status: 403,
+                error:
+                  'DEEPSEEK_API_KEY is not configured in Settings > Secrets. Switch to Google Gemini (Ready) or add DEEPSEEK_API_KEY to use DeepSeek models.',
+              })}\n\n`
+            );
+            res.end();
+            return;
+          }
+          await streamOpenAICompatibleChat({
+            url: 'https://api.deepseek.com/chat/completions',
+            apiKey: key,
+            model: modelId || 'deepseek-chat',
+            systemInstruction: safeSystem,
+            messages,
+            onToken: (text) => {
+              providerSent = true;
+              res.write(`data: ${JSON.stringify({ text })}\n\n`);
+            },
+          });
+          res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+          res.end();
+          return;
+        }
+
+        if (provider === 'openrouter') {
+          const key = (process.env.OPENROUTER_API_KEY || '').trim();
+          if (!key) {
+            res.write(
+              `data: ${JSON.stringify({
+                status: 403,
+                error:
+                  'OPENROUTER_API_KEY is not configured in Settings > Secrets. Switch to Google Gemini (Ready) or add OPENROUTER_API_KEY to use Grok, Llama, Mistral & Qwen.',
+              })}\n\n`
+            );
+            res.end();
+            return;
+          }
+          await streamOpenAICompatibleChat({
+            url: 'https://openrouter.ai/api/v1/chat/completions',
+            apiKey: key,
+            model: modelId || 'meta-llama/llama-3.3-70b-instruct',
+            systemInstruction: safeSystem,
+            messages,
+            extraHeaders: { 'X-Title': 'NEXORA AI' },
+            onToken: (text) => {
+              providerSent = true;
+              res.write(`data: ${JSON.stringify({ text })}\n\n`);
+            },
+          });
+          res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+          res.end();
+          return;
+        }
+      } catch (providerErr) {
+        const { status, message } = extractErrorInfo(providerErr);
+        if (
+          providerSent ||
+          !hasGeminiConfigured ||
+          !isCreditOrBillingFailure(status, message)
+        ) {
+          throw providerErr;
+        }
+        // Automatically fall through to Google Gemini below when an external key is out of credits
       }
-      await streamOpenAICompatibleChat({
-        url: 'https://api.openai.com/v1/chat/completions',
-        apiKey: key,
-        model: modelId || 'gpt-4o',
-        systemInstruction: safeSystem,
-        messages,
-        onToken: (text) => res.write(`data: ${JSON.stringify({ text })}\n\n`),
-      });
-      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-      res.end();
-      return;
     }
 
-    if (provider === 'anthropic') {
-      const key = (process.env.ANTHROPIC_API_KEY || '').trim();
-      if (!key) {
-        res.write(
-          `data: ${JSON.stringify({
-            status: 403,
-            error:
-              'ANTHROPIC_API_KEY is not configured in Settings > Secrets. Switch to Google Gemini (Ready) or add ANTHROPIC_API_KEY to use Claude models.',
-          })}\n\n`
-        );
-        res.end();
-        return;
-      }
-      await streamAnthropicChat({
-        apiKey: key,
-        model: modelId || 'claude-sonnet-4-20250514',
-        systemInstruction: safeSystem,
-        messages,
-        onToken: (text) => res.write(`data: ${JSON.stringify({ text })}\n\n`),
-      });
-      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-      res.end();
-      return;
-    }
-
-    if (provider === 'deepseek') {
-      const key = (process.env.DEEPSEEK_API_KEY || '').trim();
-      if (!key) {
-        res.write(
-          `data: ${JSON.stringify({
-            status: 403,
-            error:
-              'DEEPSEEK_API_KEY is not configured in Settings > Secrets. Switch to Google Gemini (Ready) or add DEEPSEEK_API_KEY to use DeepSeek models.',
-          })}\n\n`
-        );
-        res.end();
-        return;
-      }
-      await streamOpenAICompatibleChat({
-        url: 'https://api.deepseek.com/chat/completions',
-        apiKey: key,
-        model: modelId || 'deepseek-chat',
-        systemInstruction: safeSystem,
-        messages,
-        onToken: (text) => res.write(`data: ${JSON.stringify({ text })}\n\n`),
-      });
-      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-      res.end();
-      return;
-    }
-
-    if (provider === 'openrouter') {
-      const key = (process.env.OPENROUTER_API_KEY || '').trim();
-      if (!key) {
-        res.write(
-          `data: ${JSON.stringify({
-            status: 403,
-            error:
-              'OPENROUTER_API_KEY is not configured in Settings > Secrets. Switch to Google Gemini (Ready) or add OPENROUTER_API_KEY to use Grok, Llama, Mistral & Qwen.',
-          })}\n\n`
-        );
-        res.end();
-        return;
-      }
-      await streamOpenAICompatibleChat({
-        url: 'https://openrouter.ai/api/v1/chat/completions',
-        apiKey: key,
-        model: modelId || 'meta-llama/llama-3.3-70b-instruct',
-        systemInstruction: safeSystem,
-        messages,
-        extraHeaders: { 'X-Title': 'NEXORA AI' },
-        onToken: (text) => res.write(`data: ${JSON.stringify({ text })}\n\n`),
-      });
-      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-      res.end();
-      return;
-    }
-
-    // Default: Google Gemini (with automatic fallback between gemini-4-hydrogen and gemini-3.1-flash-lite)
+    // Default (or credit-exhausted fallback): Google Gemini (gemini-4-hydrogen <-> gemini-3.1-flash-lite)
     const ai = getGeminiClient();
     const geminiModel =
       modelId === 'gemini-3.1-flash-lite' ? 'gemini-3.1-flash-lite' : TEXT_MODEL;
@@ -1669,6 +1735,10 @@ app.post('/api/tts', async (req, res) => {
 
     if (provider === 'elevenlabs') {
       const elKey = (process.env.ELEVENLABS_API_KEY || '').trim();
+      const hasGeminiForTts = Boolean(
+        (process.env.GEMINI_API_KEY || '').trim() &&
+          process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY'
+      );
       if (!elKey) {
         res.status(403).json({
           error:
@@ -1707,30 +1777,39 @@ app.post('/api/tts', async (req, res) => {
         }
       );
 
-      if (!elResp.ok) {
-        const errBody = await elResp.text().catch(() => '');
-        let detail = `ElevenLabs API returned HTTP ${elResp.status}.`;
-        try {
-          const parsed = JSON.parse(errBody) as { detail?: { message?: string } | string };
-          if (typeof parsed.detail === 'string') detail = parsed.detail;
-          else if (parsed.detail?.message) detail = parsed.detail.message;
-        } catch {
-          if (errBody) detail = errBody.slice(0, 200);
-        }
+      if (elResp.ok) {
+        const arrayBuf = await elResp.arrayBuffer();
+        const audioBase64 = Buffer.from(arrayBuf).toString('base64');
+        res.json({
+          audioBase64,
+          mimeType: 'audio/mpeg',
+          provider: 'elevenlabs',
+        });
+        return;
+      }
+
+      const errBody = await elResp.text().catch(() => '');
+      let detail = `ElevenLabs API returned HTTP ${elResp.status}.`;
+      try {
+        const parsed = JSON.parse(errBody) as { detail?: { message?: string } | string };
+        if (typeof parsed.detail === 'string') detail = parsed.detail;
+        else if (parsed.detail?.message) detail = parsed.detail.message;
+      } catch {
+        if (errBody) detail = errBody.slice(0, 200);
+      }
+
+      const isElQuotaOrCredit =
+        elResp.status === 402 ||
+        elResp.status === 429 ||
+        /credit|quota|limit|exceeded/i.test(detail);
+
+      if (!hasGeminiForTts || !isElQuotaOrCredit) {
         res.status(elResp.status).json({
           error: `ElevenLabs TTS failed: ${detail}`,
         });
         return;
       }
-
-      const arrayBuf = await elResp.arrayBuffer();
-      const audioBase64 = Buffer.from(arrayBuf).toString('base64');
-      res.json({
-        audioBase64,
-        mimeType: 'audio/mpeg',
-        provider: 'elevenlabs',
-      });
-      return;
+      // Fall through seamlessly to Gemini TTS when ElevenLabs credits are exhausted
     }
 
     // Default: Google Gemini TTS

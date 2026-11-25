@@ -68,12 +68,12 @@ export const AI_MODEL_CATALOG: AiModelSpec[] = [
     supportsVision: true,
   },
   {
-    id: 'o3-mini',
-    label: 'OpenAI o3-mini',
+    id: 'gpt-5-mini',
+    label: 'OpenAI GPT-5 Mini',
     provider: 'openai',
     providerName: 'OpenAI ChatGPT',
-    tagline: 'STEM & coding reasoning',
-    supportsVision: false,
+    tagline: 'Fast STEM, coding & reasoning',
+    supportsVision: true,
   },
   {
     id: 'claude-sonnet-4-20250514',
@@ -141,8 +141,14 @@ export const AI_MODEL_CATALOG: AiModelSpec[] = [
   },
 ];
 
+const MODEL_ALIASES: Record<string, string> = {
+  'o3-mini': 'gpt-5-mini',
+  'o4-mini': 'gpt-5-mini',
+};
+
 export function getModelSpec(modelId?: string): AiModelSpec {
-  return AI_MODEL_CATALOG.find((m) => m.id === modelId) || AI_MODEL_CATALOG[0];
+  const resolvedId = (modelId && MODEL_ALIASES[modelId]) || modelId;
+  return AI_MODEL_CATALOG.find((m) => m.id === resolvedId) || AI_MODEL_CATALOG[0];
 }
 
 export const ELEVENLABS_PRESET_VOICES: ElevenLabsVoice[] = [
@@ -573,6 +579,9 @@ export function formatApiErrorMessage(status: number, rawMessage?: string): stri
 
   if (status === 401 || status === 403 || msg.includes('PERMISSION_DENIED') || msg.includes('API_KEY_INVALID')) {
     return 'Gemini API authentication failed. Please verify GEMINI_API_KEY in Settings > Secrets.';
+  }
+  if (status === 402 || /no credits|credit balance|insufficient_quota|payment required/i.test(msg)) {
+    return 'External provider API credits exhausted (no credits remaining). Switch to Google Gemini or recharge that provider API key in Settings > Secrets.';
   }
   if (status === 429 || msg.includes('RESOURCE_EXHAUSTED')) {
     return 'Rate limit or quota reached for the Gemini API key. Please wait a moment and try again.';

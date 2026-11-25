@@ -195,6 +195,10 @@ test('formatApiErrorMessage maps status codes and unwraps nested JSON cleanly', 
     formatApiErrorMessage(404, 'The page could not be found NOT_FOUND bom1::r4fcw-1795609141650-691460d7c389'),
     /Backend API route \(\/api\/\*\) was not found on this host/
   );
+  assert.match(
+    formatApiErrorMessage(402, 'You have no credits remaining.'),
+    /credits exhausted.*Google Gemini/i
+  );
 });
 
 test('inferBiomeFromText chooses situational 3D biomes and avoids space unless requested', () => {
@@ -294,6 +298,8 @@ test('sanitizeGeneratedScenes derives clean keyPoints when omitted by model', ()
 test('getModelSpec resolves Gemini, ChatGPT, Claude, DeepSeek, and OpenRouter models cleanly', () => {
   assert.ok(AI_MODEL_CATALOG.length >= 10);
   assert.equal(getModelSpec('gpt-4o').provider, 'openai');
+  assert.equal(getModelSpec('gpt-5-mini').provider, 'openai');
+  assert.equal(getModelSpec('o3-mini').id, 'gpt-5-mini');
   assert.equal(getModelSpec('claude-sonnet-4-20250514').provider, 'anthropic');
   assert.equal(getModelSpec('deepseek-chat').provider, 'deepseek');
   assert.equal(getModelSpec('x-ai/grok-3-mini').provider, 'openrouter');
