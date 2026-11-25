@@ -179,6 +179,18 @@ test('formatApiErrorMessage maps status codes and unwraps nested JSON cleanly', 
     formatApiErrorMessage(403, 'ELEVENLABS_API_KEY is not configured. Add ELEVENLABS_API_KEY in Settings > Secrets.'),
     /ELEVENLABS_API_KEY/
   );
+  assert.equal(
+    formatApiErrorMessage(404),
+    'Requested Gemini model was not found. Please check the server model configuration.'
+  );
+  assert.equal(
+    formatApiErrorMessage(404, 'NOT_FOUND'),
+    'Requested Gemini model was not found. Please check the server model configuration.'
+  );
+  assert.equal(
+    formatApiErrorMessage(404, 'models/custom-model is not found'),
+    'Model or endpoint unavailable: models/custom-model is not found'
+  );
 });
 
 test('inferBiomeFromText chooses situational 3D biomes and avoids space unless requested', () => {

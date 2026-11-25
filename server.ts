@@ -83,6 +83,30 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 2, delayMs = 1100): 
   }
 }
 
+async function generateContentWithFallback<T>(
+  runner: (modelName: string) => Promise<T>,
+  preferredModel: string = TEXT_MODEL
+): Promise<T> {
+  const candidates =
+    preferredModel === 'gemini-3.1-flash-lite'
+      ? ['gemini-3.1-flash-lite', TEXT_MODEL]
+      : [preferredModel, 'gemini-3.1-flash-lite'];
+
+  let lastErr: unknown;
+  for (const modelName of candidates) {
+    try {
+      return await withRetry(() => runner(modelName), 1);
+    } catch (err) {
+      lastErr = err;
+      const { status } = extractErrorInfo(err);
+      if (status === 401 || status === 403) {
+        throw err;
+      }
+    }
+  }
+  throw lastErr;
+}
+
 const app = express();
 app.use(express.json({ limit: '25mb' }));
 
@@ -425,10 +449,14 @@ app.post('/api/chat', async (req, res) => {
       return;
     }
 
-    // Default: Google Gemini (free-tier models only)
+    // Default: Google Gemini (with automatic fallback between gemini-4-hydrogen and gemini-3.1-flash-lite)
     const ai = getGeminiClient();
     const geminiModel =
       modelId === 'gemini-3.1-flash-lite' ? 'gemini-3.1-flash-lite' : TEXT_MODEL;
+    const geminiCandidates =
+      geminiModel === 'gemini-3.1-flash-lite'
+        ? ['gemini-3.1-flash-lite', TEXT_MODEL]
+        : [TEXT_MODEL, 'gemini-3.1-flash-lite'];
 
     const contents = messages.map((msg) => {
       const parts: Array<
@@ -465,26 +493,45 @@ app.post('/api/chat', async (req, res) => {
       };
     });
 
-    const stream = await withRetry(
-      () =>
-        ai.models.generateContentStream({
-          model: geminiModel,
-          contents,
-          config: {
-            systemInstruction: safeSystem,
-            ...(geminiModel === TEXT_MODEL
-              ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
-              : {}),
-          },
-        }),
-      2
-    );
+    let sentAnyChunk = false;
+    let streamErr: unknown = null;
+    for (const candidateModel of geminiCandidates) {
+      try {
+        const stream = await withRetry(
+          () =>
+            ai.models.generateContentStream({
+              model: candidateModel,
+              contents,
+              config: {
+                systemInstruction: safeSystem,
+                ...(candidateModel === TEXT_MODEL
+                  ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
+                  : {}),
+              },
+            }),
+          1
+        );
 
-    for await (const chunk of stream) {
-      const text = chunk.text;
-      if (text) {
-        res.write(`data: ${JSON.stringify({ text })}\n\n`);
+        for await (const chunk of stream) {
+          const text = chunk.text;
+          if (text) {
+            sentAnyChunk = true;
+            res.write(`data: ${JSON.stringify({ text })}\n\n`);
+          }
+        }
+        streamErr = null;
+        break;
+      } catch (err) {
+        streamErr = err;
+        const { status } = extractErrorInfo(err);
+        if (sentAnyChunk || status === 401 || status === 403) {
+          throw err;
+        }
       }
+    }
+
+    if (streamErr) {
+      throw streamErr;
     }
 
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
@@ -560,14 +607,16 @@ app.post('/api/homework', async (req, res) => {
 
     parts.push({ text: promptText });
 
-    const response = await withRetry(() =>
+    const response = await generateContentWithFallback((modelName) =>
       ai.models.generateContent({
-        model: TEXT_MODEL,
+        model: modelName,
         contents: { parts },
         config: {
           systemInstruction:
             'You are NEXORA AI Homework Tutor. Be accurate, crystal clear, encouraging, and format math/science steps cleanly with Markdown.',
-          thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM },
+          ...(modelName === TEXT_MODEL
+            ? { thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM } }
+            : {}),
         },
       })
     );
@@ -598,9 +647,9 @@ app.post('/api/youtube', async (req, res) => {
       return;
     }
 
-    const response = await withRetry(() =>
+    const response = await generateContentWithFallback((modelName) =>
       ai.models.generateContent({
-        model: TEXT_MODEL,
+        model: modelName,
         contents: `Generate a complete YouTube SEO growth package for a ${category} video about: "${topic.trim()}". Output language: ${language}. Make titles high-CTR, description rich with timestamps/hook/CTA, 15 relevant SEO tags, 8 hashtags, 3 punchy thumbnail text concepts, and an engaging 15-second intro hook script.`,
         config: {
           systemInstruction:
@@ -692,14 +741,16 @@ app.post('/api/coding', async (req, res) => {
       .filter(Boolean)
       .join('\n\n');
 
-    const response = await withRetry(() =>
+    const response = await generateContentWithFallback((modelName) =>
       ai.models.generateContent({
-        model: TEXT_MODEL,
+        model: modelName,
         contents: fullPrompt,
         config: {
           systemInstruction:
             'You are NEXORA AI Principal Software & Game Engineer. Write clean, bug-free, production-quality code with clear explanations and fenced Markdown code blocks.',
-          thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM },
+          ...(modelName === TEXT_MODEL
+            ? { thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM } }
+            : {}),
         },
       })
     );
@@ -721,9 +772,9 @@ app.post('/api/utility', async (req, res) => {
     };
 
     if (tool === 'brainstorming') {
-      const response = await withRetry(() =>
+      const response = await generateContentWithFallback((modelName) =>
         ai.models.generateContent({
-          model: TEXT_MODEL,
+          model: modelName,
           contents: `Brainstorm creative, practical ideas for topic: "${payload.topic}" in category "${payload.category || 'General'}". Output language: ${payload.language || 'English'}.`,
           config: {
             responseMimeType: 'application/json',
@@ -784,9 +835,9 @@ app.post('/api/utility', async (req, res) => {
       return;
     }
 
-    const response = await withRetry(() =>
+    const response = await generateContentWithFallback((modelName) =>
       ai.models.generateContent({
-        model: TEXT_MODEL,
+        model: modelName,
         contents: prompt,
         config: { systemInstruction },
       })
@@ -935,47 +986,51 @@ Respond ONLY with JSON matching this schema so our high-resolution canvas compos
 
       let recipeObj: Record<string, unknown> = {};
       try {
-        const remixResp = await ai.models.generateContent({
-          model: TEXT_MODEL,
-          contents: {
-            parts: [
-              ...validRefs.map((img) => ({
-                inlineData: {
-                  mimeType: img.mimeType || 'image/jpeg',
-                  data: img.dataBase64!,
+        const remixResp = await generateContentWithFallback((modelName) =>
+          ai.models.generateContent({
+            model: modelName,
+            contents: {
+              parts: [
+                ...validRefs.map((img) => ({
+                  inlineData: {
+                    mimeType: img.mimeType || 'image/jpeg',
+                    data: img.dataBase64!,
+                  },
+                })),
+                { text: remixPrompt },
+              ],
+            },
+            config: {
+              abortSignal: AbortSignal.timeout(18000),
+              ...(modelName === TEXT_MODEL
+                ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
+                : {}),
+              responseMimeType: 'application/json',
+              responseSchema: {
+                type: Type.OBJECT,
+                required: ['title', 'brightness', 'contrast', 'saturate', 'tintTopColor', 'tintBottomColor'],
+                properties: {
+                  title: { type: Type.STRING },
+                  brightness: { type: Type.NUMBER },
+                  contrast: { type: Type.NUMBER },
+                  saturate: { type: Type.NUMBER },
+                  hueRotate: { type: Type.NUMBER },
+                  sepia: { type: Type.NUMBER },
+                  bloom: { type: Type.NUMBER },
+                  vignette: { type: Type.NUMBER },
+                  tintTopColor: { type: Type.STRING },
+                  tintBottomColor: { type: Type.STRING },
+                  tintOpacity: { type: Type.NUMBER },
+                  blendMode: { type: Type.STRING },
+                  particleEffect: { type: Type.STRING },
+                  edgeStyle: { type: Type.STRING },
+                  palette: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  artDirectionNotes: { type: Type.STRING },
                 },
-              })),
-              { text: remixPrompt },
-            ],
-          },
-          config: {
-            abortSignal: AbortSignal.timeout(18000),
-            thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: Type.OBJECT,
-              required: ['title', 'brightness', 'contrast', 'saturate', 'tintTopColor', 'tintBottomColor'],
-              properties: {
-                title: { type: Type.STRING },
-                brightness: { type: Type.NUMBER },
-                contrast: { type: Type.NUMBER },
-                saturate: { type: Type.NUMBER },
-                hueRotate: { type: Type.NUMBER },
-                sepia: { type: Type.NUMBER },
-                bloom: { type: Type.NUMBER },
-                vignette: { type: Type.NUMBER },
-                tintTopColor: { type: Type.STRING },
-                tintBottomColor: { type: Type.STRING },
-                tintOpacity: { type: Type.NUMBER },
-                blendMode: { type: Type.STRING },
-                particleEffect: { type: Type.STRING },
-                edgeStyle: { type: Type.STRING },
-                palette: { type: Type.ARRAY, items: { type: Type.STRING } },
-                artDirectionNotes: { type: Type.STRING },
               },
             },
-          },
-        });
+          })
+        );
         recipeObj = JSON.parse((remixResp.text || '{}').trim()) as Record<string, unknown>;
       } catch {
         // Safe empty fallback lets client apply smart prompt-matched defaults
@@ -1208,7 +1263,7 @@ Respond ONLY with JSON matching this schema so our high-resolution canvas compos
 
     for (const candidateModel of [TEXT_MODEL, 'gemini-3.1-flash-lite']) {
       try {
-        const resp = await runVectorGen(candidateModel, 26000);
+        const resp = await withRetry(() => runVectorGen(candidateModel, 26000), 1);
         const parsed = extractVectorArtworkPayload(
           resp.text || '',
           cleanPrompt || `${style} Illustration`
@@ -1693,7 +1748,7 @@ app.post('/api/tts', async (req, res) => {
         },
       });
 
-    // Dual-speaker dialogue mode (gemini-3.8-flash-tts)
+    // Dual-speaker dialogue mode (gemini-3.8-flash-tts with automatic fallback to single-speaker TTS_MODEL)
     if (mode === 'dialogue' && validDialogue.length > 0) {
       const spkA = (speakerAName || 'Alex').trim() || 'Alex';
       const spkB = (speakerBName || 'Sam').trim() || 'Sam';
@@ -1737,27 +1792,34 @@ app.post('/api/tts', async (req, res) => {
         });
       };
 
-      let multiResponse;
-      try {
-        multiResponse = await withRetry(() => callMultiTts('v1alpha'), 1);
-      } catch (multiErr) {
-        const { status } = extractErrorInfo(multiErr);
-        if (status === 401 || status === 403 || status === 429) {
-          throw multiErr;
+      let multiAudio = '';
+      for (const apiVer of ['v1alpha', undefined] as const) {
+        try {
+          const multiResponse = await withRetry(() => callMultiTts(apiVer), 1);
+          multiAudio =
+            multiResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || '';
+          if (multiAudio) break;
+        } catch (multiErr) {
+          const { status } = extractErrorInfo(multiErr);
+          if (status === 401 || status === 403 || status === 429) {
+            throw multiErr;
+          }
         }
-        multiResponse = await withRetry(() => callMultiTts(undefined), 1);
       }
 
-      const multiAudio =
-        multiResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (!multiAudio) {
-        res.status(502).json({ error: 'Dual-speaker voice model returned empty audio.' });
+      if (multiAudio) {
+        res.json({ audioBase64: multiAudio, mimeType: 'audio/wav', provider: 'gemini' });
         return;
       }
-
-      res.json({ audioBase64: multiAudio, mimeType: 'audio/wav', provider: 'gemini' });
-      return;
+      // Graceful fall-through to single-speaker TTS_MODEL below if dual-speaker model is unavailable
     }
+
+    const effectiveSingleText =
+      cleanText ||
+      validDialogue
+        .map((d) => `${d.speaker}: ${d.text}`)
+        .join('. ')
+        .slice(0, 2500);
 
     // Single speaker (gemini-3.8-flash-lite-tts)
     const callTts = async (apiVersion: string | undefined, includeMetadata: boolean, includeSpeechConfig: boolean) => {
@@ -1769,8 +1831,8 @@ app.post('/api/tts', async (req, res) => {
             role: 'user',
             parts: [
               includeMetadata
-                ? { text: cleanText, speechMetadata: { style } }
-                : { text: cleanText },
+                ? { text: effectiveSingleText, speechMetadata: { style } }
+                : { text: effectiveSingleText },
             ],
           },
         ],
@@ -1820,10 +1882,11 @@ app.post('/api/tts', async (req, res) => {
   }
 });
 
-// 9. Audio Transcription (gemini-3.5-transcribe)
+// 9. Audio Transcription (gemini-3.5-transcribe with multimodal fallback)
 app.post('/api/transcribe', async (req, res) => {
   try {
     const ai = getGeminiClient();
+    const apiKey = process.env.GEMINI_API_KEY!;
     const { audioBase64, mimeType = 'audio/webm' } = req.body as {
       audioBase64: string;
       mimeType?: string;
@@ -1834,26 +1897,64 @@ app.post('/api/transcribe', async (req, res) => {
       return;
     }
 
-    const response = await withRetry(() =>
-      ai.models.generateContent({
-        model: TRANSCRIBE_MODEL,
-        contents: {
-          parts: [
-            {
-              inlineData: {
-                mimeType,
-                data: audioBase64,
-              },
-            },
-            {
-              text: 'Transcribe this spoken audio accurately. Preserve English, Hindi, or Hinglish phrases naturally without adding commentary.',
-            },
-          ],
+    const transcribeContents = {
+      parts: [
+        {
+          inlineData: {
+            mimeType,
+            data: audioBase64,
+          },
         },
-      })
-    );
+        {
+          text: 'Transcribe this spoken audio accurately. Return only the transcribed words verbatim, preserving English, Hindi, or Hinglish phrases naturally without adding commentary.',
+        },
+      ],
+    };
 
-    res.json({ text: (response.text || '').trim() });
+    const attempts: Array<{ model: string; apiVersion?: string }> = [
+      { model: TRANSCRIBE_MODEL, apiVersion: 'v1alpha' },
+      { model: TRANSCRIBE_MODEL },
+      { model: TEXT_MODEL },
+      { model: 'gemini-3.1-flash-lite' },
+    ];
+
+    let transcriptText = '';
+    let lastErr: unknown = null;
+
+    for (const attempt of attempts) {
+      try {
+        const client = attempt.apiVersion
+          ? new GoogleGenAI({
+              apiKey,
+              apiVersion: attempt.apiVersion,
+              httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+            })
+          : ai;
+        const response = await withRetry(
+          () =>
+            client.models.generateContent({
+              model: attempt.model,
+              contents: transcribeContents,
+            }),
+          1
+        );
+        transcriptText = (response.text || '').trim();
+        lastErr = null;
+        break;
+      } catch (err) {
+        lastErr = err;
+        const { status } = extractErrorInfo(err);
+        if (status === 401 || status === 403) {
+          throw err;
+        }
+      }
+    }
+
+    if (lastErr) {
+      throw lastErr;
+    }
+
+    res.json({ text: transcriptText });
   } catch (err) {
     const info = extractErrorInfo(err);
     res.status(info.status).json({ error: info.message });

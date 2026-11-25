@@ -64,12 +64,13 @@ export async function streamChatCompletion(
   });
 
   if (!response.ok || !response.body) {
-    let errText = '';
+    const rawText = await response.text().catch(() => '');
+    let errText = rawText;
     try {
-      const json = await response.json();
-      errText = json.error;
+      const json = JSON.parse(rawText) as { error?: string; message?: string };
+      errText = json.error || json.message || rawText;
     } catch {
-      errText = await response.text();
+      // Keep plain-text error body
     }
     throw new Error(formatApiErrorMessage(response.status, errText));
   }
@@ -122,9 +123,19 @@ async function postJson<T>(
     signal,
     body: JSON.stringify(body),
   });
-  const data = await response.json().catch(() => ({}));
+  const rawText = await response.text().catch(() => '');
+  let data: Record<string, unknown> = {};
+  try {
+    data = rawText ? (JSON.parse(rawText) as Record<string, unknown>) : {};
+  } catch {
+    data = {};
+  }
   if (!response.ok) {
-    throw new Error(formatApiErrorMessage(response.status, data?.error));
+    const errMsg =
+      (typeof data.error === 'string' && data.error) ||
+      (typeof data.message === 'string' && data.message) ||
+      rawText;
+    throw new Error(formatApiErrorMessage(response.status, errMsg));
   }
   return data as T;
 }

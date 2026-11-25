@@ -581,6 +581,9 @@ export function formatApiErrorMessage(status: number, rawMessage?: string): stri
     return 'NEXORA AI is experiencing temporary high demand (503). Please try again in a few seconds.';
   }
   if (status === 404 || msg.includes('NOT_FOUND')) {
+    if (msg && !/^NOT_FOUND$/i.test(msg)) {
+      return `Model or endpoint unavailable: ${msg}`;
+    }
     return 'Requested Gemini model was not found. Please check the server model configuration.';
   }
   if (msg) return msg;
