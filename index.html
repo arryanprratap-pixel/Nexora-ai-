@@ -32,7 +32,27 @@
         } catch (e) {}
       })();
     </script>
-    <script data-cfasync="false" src="https://abscloud.org/1/3a689a990e9e17bbbe1fe1a7547f7b60"></script>
+    <script>
+      (function () {
+        var POPUNDER_COOLDOWN_MS = 4 * 60 * 60 * 1000;
+        var POPUNDER_DELAY_MS = 20000;
+        try {
+          var key = 'nexora_popunder_last_ts';
+          var last = Number(localStorage.getItem(key) || '0');
+          if (Date.now() - last < POPUNDER_COOLDOWN_MS) return;
+          setTimeout(function () {
+            try {
+              localStorage.setItem(key, String(Date.now()));
+            } catch (e) {}
+            var s = document.createElement('script');
+            s.setAttribute('data-cfasync', 'false');
+            s.src = 'https://abscloud.org/1/3a689a990e9e17bbbe1fe1a7547f7b60';
+            s.async = true;
+            document.head.appendChild(s);
+          }, POPUNDER_DELAY_MS);
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body class="bg-slate-50 text-slate-900 dark:bg-[#090D16] dark:text-slate-100 antialiased selection:bg-indigo-500/30">
     <div id="root"></div>
